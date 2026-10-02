@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Smart Rice Paddy Control Center</title>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f7f6; margin: 20px; }
+    h1 { text-align: center; color: #2c3e50; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; max-width: 1200px; margin: 0 auto; }
+    .card { background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    .card h2 { margin-top: 0; color: #34495e; font-size: 1.2em; }
+    .val { font-size: 1.4em; font-weight: bold; color: #27ae60; }
+    button, select, input { width: 100%; padding: 10px; margin-top: 10px; font-size: 1em; border-radius: 5px; border: 1px solid #ccc; box-sizing: border-box; }
+    button { cursor: pointer; }
+    .btn-on { background: #27ae60; color: white; border: none; }
+    .btn-off { background: #e74c3c; color: white; border: none; }
+    .btn-primary { background: #2980b9; color: white; border: none; }
+    #loginContainer { max-width: 400px; margin: 80px auto; }
+    #dashboardContainer { display: none; }
+    .hidden { display: none !important; }
+    .error { color: #e74c3c; margin-top: 10px; text-align: center; }
+  </style>
+</head>
+<body>
+
+  <!-- LOGIN SCREEN -->
+  <div id="loginContainer" class="card">
+    <h2>🔒 Paddy System Login</h2>
+    <input type="email" id="email" placeholder="Email Address">
+    <input type="password" id="password" placeholder="Password">
+    <button class="btn-primary" onclick="login()">Sign In</button>
+    <p id="loginError" class="error"></p>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="dashboardContainer">
+    <div style="display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto 20px auto;">
+      <h1>🌾 Smart Rice Paddy Control Center</h1>
+      <button class="btn-off" style="width: auto; padding: 8px 16px;" onclick="logout()">Sign Out</button>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h2>Soil Moisture (Avg)</h2>
+        <p>Zone 1: <span id="z1_sm" class="val">0</span> %</p>
+        <p>Zone 2: <span id="z2_sm" class="val">0</span> %</p>
+        <p>Zone 3: <span id="z3_sm" class="val">0</span> %</p>
+      </div>
+
+      <div class="card">
+        <h2>Water Levels</h2>
+        <p>Zone 1: <span id="z1_wl" class="val">0</span> cm</p>
+        <p>Zone 2: <span id="z2_wl" class="val">0</span> cm</p>
+        <p>Zone 3: <span id="z3_wl" class="val">0</span> cm</p>
+      </div>
+
+      <div class="card">
+        <h2>Ambient Environment</h2>
+        <p>Temperature: <span id="temp" class="val">0</span> °C</p>
+        <p>Humidity: <span id="hum" class="val">0</span> %</p>
+      </div>
+
+      <div class="card">
+        <h2>System Modes & Phase</h2>
+        <label>System Mode:</label>
+        <select id="modeSelect" onchange="updateFirebase('controls/mode', parseInt(this.value))">
+          <option value="0">AUTOMATIC</option>
+          <option value="1">MANUAL CONTROL</option>
+        </select>
+
+        <label style="margin-top:15px; display:block;">Active Growth Phase:</label>
+        <select id="phaseSelect" onchange="updateFirebase('controls/phase', parseInt(this.value))">
+          <option value="1">Phase 1: Water Level Maintained</option>
+          <option value="2">Phase 2: Soil Moisture & Temp Control</option>
+          <option value="3">Phase 3: Drain & Dry</option>
+        </select>
+      </div>
+
+      <div class="card">
+        <h2>Manual Override Switches</h2>
+        <button id="v1Btn" onclick="toggleControl('man_v1')">Valve Zone 1: OFF</button>
+        <button id="v2Btn" onclick="toggleControl('man_v2')">Valve Zone 2: OFF</button>
+        <button id="v3Btn" onclick="toggleControl('man_v3')">Valve Zone 3: OFF</button>
+        <button id="drainBtn" onclick="toggleControl('man_drain')">Drain Servo: OFF</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "YOUR_FIREBASE_API_KEY",
+      databaseURL: "https://your-project-id-default-rtdb.firebaseio.com/"
+    };
+    firebase.initializeApp(firebaseConfig);
+
+    const auth = firebase.auth();
+    const db = firebase.database();
+    let currentControls = {};
+
+    auth.onAuthStateChanged(user => {
+      if (user) {
+        document.getElementById('loginContainer').classList.add('hidden');
+        document.getElementById('dashboardContainer').style.display = 'block';
+        attachListeners();
+      } else {
+        document.getElementById('loginContainer').classList.remove('hidden');
+        document.getElementById('dashboardContainer').style.display = 'none';
+      }
+    });
+
+    function login() {
+      const email = document.getElementById('email').value;
+      const pass = document.getElementById('password').value;
+      document.getElementById('loginError').innerText = '';
+
+      auth.signInWithEmailAndPassword(email, pass).catch(err => {
+        document.getElementById('loginError').innerText = err.message;
+      });
+    }
+
+    function logout() { auth.signOut(); }
+
+    function attachListeners() {
+      db.ref('telemetry').on('value', snap => {
+        const d = snap.val() || {};
+        document.getElementById('z1_sm').innerText = d.z1_sm?.toFixed(1) || 0;
+        document.getElementById('z2_sm').innerText = d.z2_sm?.toFixed(1) || 0;
+        document.getElementById('z3_sm').innerText = d.z3_sm?.toFixed(1) || 0;
+        document.getElementById('z1_wl').innerText = d.z1_wl?.toFixed(1) || 0;
+        document.getElementById('z2_wl').innerText = d.z2_wl?.toFixed(1) || 0;
+        document.getElementById('z3_wl').innerText = d.z3_wl?.toFixed(1) || 0;
+        document.getElementById('temp').innerText = d.temp?.toFixed(1) || 0;
+        document.getElementById('hum').innerText = d.hum?.toFixed(1) || 0;
+      });
+
+      db.ref('controls').on('value', snap => {
+        currentControls = snap.val() || {};
+        document.getElementById('modeSelect').value = currentControls.mode || 0;
+        document.getElementById('phaseSelect').value = currentControls.phase || 1;
+
+        updateBtn('v1Btn', 'Valve Zone 1', currentControls.man_v1);
+        updateBtn('v2Btn', 'Valve Zone 2', currentControls.man_v2);
+        updateBtn('v3Btn', 'Valve Zone 3', currentControls.man_v3);
+        updateBtn('drainBtn', 'Drain Servo', currentControls.man_drain);
+      });
+    }
+
+    function updateBtn(id, label, val) {
+      const btn = document.getElementById(id);
+      btn.innerText = `${label}: ${val === 1 ? 'ON' : 'OFF'}`;
+      btn.className = val === 1 ? 'btn-on' : 'btn-off';
+    }
+
+    function updateFirebase(path, val) { db.ref(path).set(val); }
+
+    function toggleControl(key) {
+      const currentVal = currentControls[key] || 0;
+      db.ref(`controls/${key}`).set(currentVal === 1 ? 0 : 1);
+    }
+  </script>
+</body>
+</html>
