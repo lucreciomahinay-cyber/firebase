@@ -3,19 +3,19 @@
 #include <ArduinoJson.h>
 
 #ifndef WIFI_SSID
-#define WIFI_SSID "YOUR_WIFI_NAME"
+#define WIFI_SSID "Hacker(DND)"
 #endif
 
 #ifndef WIFI_PASSWORD
-#define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
+#define WIFI_PASSWORD "Mahinay12*"
 #endif
 
 #ifndef API_KEY
-#define API_KEY "YOUR_FIREBASE_API_KEY"
+#define API_KEY "AIzaSyBnpYw7RsOXs4TEOZFMSQDwJIKuIfhGUGU"
 #endif
 
 #ifndef DATABASE_URL
-#define DATABASE_URL "https://your-project-id-default-rtdb.firebaseio.com/"
+#define DATABASE_URL "https://rice-paddy-automation-12d15-default-rtdb.asia-southeast1.firebasedatabase.app"
 #endif
 
 FirebaseData fbdo;
