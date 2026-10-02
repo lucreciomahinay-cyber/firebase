@@ -1,0 +1,89 @@
+name: Rice Paddy System CI/CD
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build-mega:
+    name: Build Arduino Mega Firmware
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install AVR Core & Libraries
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install arduino:avr
+          arduino-cli lib install "ArduinoJson"
+          arduino-cli lib install "DHT sensor library"
+          arduino-cli lib install "Adafruit Unified Sensor"
+          arduino-cli lib install "Servo"
+
+      - name: Compile Arduino Mega Sketch
+        run: |
+          arduino-cli compile --fqbn arduino:avr:mega Arduino_Mega_Controller/Arduino_Mega_Controller.ino --output-dir build/mega
+
+      - name: Upload Mega Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: arduino-mega-firmware
+          path: build/mega/*.hex
+
+  build-esp32:
+    name: Build ESP32 Firmware
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install ESP32 Core & Libraries
+        run: |
+          arduino-cli core update-index --additional-urls https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+          arduino-cli core install esp32:esp32 --additional-urls https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+          arduino-cli lib install "ArduinoJson"
+          arduino-cli lib install "Firebase ESP Client"
+
+      - name: Compile ESP32 Sketch
+        env:
+          WIFI_SSID: ${{ secrets.WIFI_SSID }}
+          WIFI_PASSWORD: ${{ secrets.WIFI_PASSWORD }}
+          API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
+        run: |
+          arduino-cli compile --fqbn esp32:esp32:esp32 ESP32_Firebase_Gateway/ESP32_Firebase_Gateway.ino \
+            --build-property "compiler.cpp.extra_flags=-DWIFI_SSID=\"$WIFI_SSID\" -DWIFI_PASSWORD=\"$WIFI_PASSWORD\" -DAPI_KEY=\"$API_KEY\" -DDATABASE_URL=\"$DATABASE_URL\"" \
+            --output-dir build/esp32 \
+            --additional-urls https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+
+      - name: Upload ESP32 Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: esp32-firmware
+          path: build/esp32/*.bin
+
+  deploy-dashboard:
+    name: Deploy Web Dashboard to Firebase Hosting
+    needs: [build-mega, build-esp32]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Deploy to Firebase
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}'
+          channelId: live
+          projectId: your-project-id
